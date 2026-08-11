@@ -1,0 +1,25 @@
+{
+  "_readme": [
+    "Drone camera profile library (spec §7.1 / F-C2).",
+    "Numbers are filled from the EXIF of a REAL photo taken by YOUR aircraft,",
+    "never from published specifications — run:",
+    "    python3 tools/exif_profile.py <photo.JPG> --altitude <AGL_m>",
+    "and paste the snippet it prints. min_shot_interval_s is measured:",
+    "the fastest interval-shooting setting that reliably fires every frame.",
+    "A profile with nulls MUST NOT be used for mission generation."
+  ],
+  "profiles": [
+    {
+      "id": "dji-mini-5-pro",
+      "name": "DJI Mini 5 Pro",
+      "sensor_width_mm": null,
+      "sensor_height_mm": null,
+      "focal_length_mm": null,
+      "image_width_px": null,
+      "image_height_px": null,
+      "min_shot_interval_s": null,
+      "_verified": false,
+      "_note": "PRIMARY AIRFRAME. Fill via tools/exif_profile.py before first mission generation."
+    }
+  ]
+}
