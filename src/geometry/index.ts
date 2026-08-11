@@ -349,6 +349,52 @@ function containsPointTol(poly: PolyM, x: number, y: number, tol: number) {
 }
 
 /**
+ * Is the straight segment a→b wholly inside `poly`?
+ *
+ * EXACT, not sampled. Sampling at a fixed step steps straight over any excursion
+ * narrower than the step — a 0.3 m notch, a clipped corner — and this predicate
+ * is what proves a generated mission legal, so a blind spot in it is a blind spot
+ * in the guarantee.
+ *
+ * Method: collect the parametric positions where the segment crosses any ring
+ * edge, then test the MIDPOINT of every resulting sub-interval for containment.
+ * A segment can only change sides at a crossing, so if every sub-interval's
+ * midpoint is inside, the whole segment is.
+ */
+export function segmentInside(
+  poly: PolyM,
+  a: readonly [number, number],
+  b: readonly [number, number],
+  tol = 0.05,
+): boolean {
+  const [ax, ay] = a;
+  const [bx, by] = b;
+  const dx = bx - ax, dy = by - ay;
+  if (dx === 0 && dy === 0) return containsPointTol(poly, ax, ay, tol);
+
+  const ts = [0, 1];
+  for (const rings of poly)
+    for (const ring of rings)
+      for (let i = 0; i + 1 < ring.length; i++) {
+        const [cx, cy] = ring[i]!;
+        const [dx2, dy2] = ring[i + 1]!;
+        const ex = dx2 - cx, ey = dy2 - cy;
+        const denom = dx * ey - dy * ex;
+        if (Math.abs(denom) < 1e-12) continue; // parallel or collinear
+        const t = ((cx - ax) * ey - (cy - ay) * ex) / denom;
+        const u = ((cx - ax) * dy - (cy - ay) * dx) / denom;
+        if (t > 0 && t < 1 && u >= 0 && u <= 1) ts.push(t);
+      }
+
+  ts.sort((p, q) => p - q);
+  for (let i = 0; i + 1 < ts.length; i++) {
+    const t = (ts[i]! + ts[i + 1]!) / 2;
+    if (!containsPointTol(poly, ax + dx * t, ay + dy * t, tol)) return false;
+  }
+  return true;
+}
+
+/**
  * Secondary check: the straight segments BETWEEN waypoints must also stay in F.
  * A serpentine connector can cut across an exclusion hole or a concave corner
  * even when both of its endpoints are inside. Returns the offending index pairs.
@@ -356,21 +402,13 @@ function containsPointTol(poly: PolyM, x: number, y: number, tol: number) {
 export function checkRouteEdges(
   waypoints: WaypointM[],
   Fm: PolyM,
-  step = 0.5,
+  tol = 0.05,
 ): Array<[number, number]> {
   const bad: Array<[number, number]> = [];
   for (let i = 0; i < waypoints.length - 1; i++) {
     const a = waypoints[i]!;
     const b = waypoints[i + 1]!;
-    const dist = Math.hypot(b.x - a.x, b.y - a.y);
-    const n = Math.max(2, Math.min(Math.ceil(dist / step), 4000));
-    for (let k = 0; k <= n; k++) {
-      const t = k / n;
-      if (!containsPointTol(Fm, a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 0.05)) {
-        bad.push([i, i + 1]);
-        break;
-      }
-    }
+    if (!segmentInside(Fm, [a.x, a.y], [b.x, b.y], tol)) bad.push([i, i + 1]);
   }
   return bad;
 }

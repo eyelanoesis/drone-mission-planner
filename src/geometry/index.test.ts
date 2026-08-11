@@ -31,8 +31,10 @@ import {
   lawnmower,
   makeProj,
   scanline,
+  segmentInside,
   toMetres,
   type PolyM,
+  type WaypointM,
 } from "./index.js";
 
 /** Same synthetic Nordsjælland-ish site as the Python oracle's DEMO_SITE. */
@@ -143,6 +145,42 @@ describe("route edges — the known gap the prototype documents", () => {
     // Not yet routed around — Phase 1 task. The contract for now is that it is
     // DETECTED, never silently emitted. Shapely finds exactly 2.
     expect(checkRouteEdges(wps, Fm)).toHaveLength(2);
+  });
+});
+
+describe("the verifier itself must have no blind spot", () => {
+  // 100x100 square with a 0.30 m notch cut 20 m into the top edge.
+  const NOTCHED: PolyM = [[[
+    [0, 0], [100, 0], [100, 100], [50.15, 100],
+    [50.15, 80], [49.85, 80], [49.85, 100], [0, 100], [0, 0],
+  ]]];
+
+  // checkRouteEdges is what will PROVE the exclusion router correct, so a hole
+  // in it is a hole in the guarantee. Fixed-step sampling used to decide these
+  // by phase: at 0.5 m it caught starts 20 / 20.1 / 20.2 and missed 20.3 / 20.4,
+  // despite every one of them crossing the notch.
+  it.each([20, 20.1, 20.2, 20.3, 20.4])(
+    "catches a 0.30 m excursion regardless of segment phase (start x=%s)",
+    (sx) => {
+      const wps: WaypointM[] = [
+        { x: sx, y: 90, kind: "capture-end" },
+        { x: 80, y: 90, kind: "turn" },
+      ];
+      expect(checkRouteEdges(wps, NOTCHED)).toEqual([[0, 1]]);
+    },
+  );
+
+  it("passes a connector that genuinely stays inside", () => {
+    const wps: WaypointM[] = [
+      { x: 20, y: 50, kind: "capture-end" },
+      { x: 80, y: 50, kind: "turn" },
+    ];
+    expect(checkRouteEdges(wps, NOTCHED)).toEqual([]);
+  });
+
+  it("segmentInside is exact on both sides of the notch", () => {
+    expect(segmentInside(NOTCHED, [20, 50], [80, 50])).toBe(true);
+    expect(segmentInside(NOTCHED, [20, 90], [80, 90])).toBe(false);
   });
 });
 
