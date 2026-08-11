@@ -107,11 +107,35 @@ output goes onto geojson.io if you want to see it. **Do not eyeball the distance
 
 ---
 
-## T2 — Waypoint OS  (version: ______ , date: ______ )
+## T2 — Waypoint OS  (version: ______ , date: 2026-08-11 — **partial**)
 
 ⚠️ Windows desktop only — arrange a Windows machine or VM before this trial.
 
-*(copy the T1 block)*
+**Status: file-only.** An export exists and has been read
+(`reference/waypoint-os-2026-08-11.kmz`, 8 waypoints, 50 m, Copenhagen). The
+trial itself was never run: no canonical site, so no `overshoot.py` number, and
+none of the UI rows below were checked. Only rows derivable from the exported
+file are filled — everything else stays blank on purpose.
+
+*(copy the T1 block; filled rows only:)*
+
+**Capture control**
+
+- [x] Photo triggers embedded as waypoint actions (not just a timer)? → **yes**, 4 `actionGroup`s
+- [x] Trigger mode: distance / time / per-waypoint? → **per-waypoint only** (`actionTriggerType=reachPoint`); no interval trigger present
+
+**Terrain & altitude**
+
+- [x] Altitude reference: takeoff-relative / absolute? → **takeoff-relative** (`executeHeightMode=relativeToStartPoint`)
+
+**Export & verdict**
+
+- [x] KMZ exported and copied to `reference/`? → `waypoint-os-2026-08-11.kmz`
+- [x] `kmz_inspect.py schema` run — turn-mode value actually written: **`toPointAndStopWithDiscontinuityCurvature`** (damping 0, `useStraightLine=1`)
+- Note: file carries **no gimbal pitch field at all** — see `docs/wpml-dialect.md` §3
+
+**Not measured:** overshoot, segment excursion, inset shortcut, exclusions,
+setback settings, repeatability, cost.
 
 ---
 

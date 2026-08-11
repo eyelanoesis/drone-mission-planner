@@ -73,6 +73,12 @@ published specs are sometimes wrong and a wrong focal length silently corrupts e
 
 ## WPML KMZ output (spec §9) — critical method
 
+> **Read `docs/wpml-dialect.md` first.** It is the harvested result of this method
+> so far: DJI has **two WPML dialects**, and the Mini 5 Pro needs the *consumer*
+> one (DJI Fly — `www.uav.com` namespace, no `payloadInfo`, `droneEnumValue` 68).
+> Emitting the enterprise dialect for a Mini produces a file DJI Fly refuses.
+> That document also lists the 5 fields still unresolved and what settles them.
+
 **Do NOT write the WPML generator from documentation or memory.** Reverse-engineer:
 
 1. Export a working Mini 5 Pro mission from WaypointMap or Waypoint OS
@@ -120,7 +126,10 @@ README.md
 spec/…spec-v0.2.md             authoritative spec
 docs/phase0-test-log.md        fillable evaluation log, T1–T6 — THE CURRENT TASK
 docs/phase0-desk-research.md   what each product documents (vendor claims, unverified)
+docs/wpml-dialect.md           HARVESTED SCHEMA: consumer vs enterprise WPML, Mini 5 Pro
+                               enum 68, turn-mode values, the 5 unresolved fields
 reference/                     known-good KMZ exports (added during Phase 0; never edit)
+reference/README.md            provenance per file — source, aircraft, flown yes/no
 sites/                         the ONE canonical test-site polygon, per site
 profiles/drones.json           camera profiles — nulls until EXIF-verified
 tools/kmz_inspect.py           list/dump/schema/points/diff for mission KMZs (stdlib only)

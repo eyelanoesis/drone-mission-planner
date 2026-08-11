@@ -8,3 +8,6 @@ mission_preview.geojson
 # geojson.io scratch / tool output
 *.overshoot.geojson
 sites/*.kml
+
+# node deps (Phase 1 Turf.js port)
+node_modules/
