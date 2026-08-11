@@ -211,7 +211,7 @@ export function captureRegion(
 
 // ──────────────────────────────────────────────────────────── the grid
 
-function rotate(
+export function rotate(
   x: number,
   y: number,
   deg: number,
@@ -224,7 +224,7 @@ function rotate(
   return [ox + dx * c - dy * s, oy + dx * s + dy * c];
 }
 
-function rotatePoly(poly: PolyM, deg: number, ox: number, oy: number): PolyM {
+export function rotatePoly(poly: PolyM, deg: number, ox: number, oy: number): PolyM {
   return poly.map((rings) =>
     rings.map((ring) => ring.map(([x, y]) => rotate(x, y, deg, ox, oy)) as RingM),
   );
@@ -375,9 +375,12 @@ export function segmentInside(
   const ts = [0, 1];
   for (const rings of poly)
     for (const ring of rings)
-      for (let i = 0; i + 1 < ring.length; i++) {
+      // Wrap i→(i+1)%n like ringContains and scanline do. Iterating to
+      // length-1 instead would silently drop the closing edge of any ring that
+      // is not explicitly closed — a verifier missing one edge of the boundary.
+      for (let i = 0, n = ring.length; i < n; i++) {
         const [cx, cy] = ring[i]!;
-        const [dx2, dy2] = ring[i + 1]!;
+        const [dx2, dy2] = ring[(i + 1) % n]!;
         const ex = dx2 - cx, ey = dy2 - cy;
         const denom = dx * ey - dy * ex;
         if (Math.abs(denom) < 1e-12) continue; // parallel or collinear
