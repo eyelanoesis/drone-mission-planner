@@ -118,11 +118,19 @@ oblique/double-grid for 3D · battery-aware mission splitting.
 CLAUDE.md                      this file
 README.md
 spec/…spec-v0.2.md             authoritative spec
-docs/phase0-test-log.md        fillable evaluation log — THE CURRENT TASK
+docs/phase0-test-log.md        fillable evaluation log, T1–T6 — THE CURRENT TASK
+docs/phase0-desk-research.md   what each product documents (vendor claims, unverified)
 reference/                     known-good KMZ exports (added during Phase 0; never edit)
+sites/                         the ONE canonical test-site polygon, per site
 profiles/drones.json           camera profiles — nulls until EXIF-verified
 tools/kmz_inspect.py           list/dump/schema/points/diff for mission KMZs (stdlib only)
 tools/exif_profile.py          real-photo EXIF -> verified profile JSON snippet
+tools/boundary.py              canonical site polygon: from-geojson/from-kmz/to-kml/info.
+                               `to-kml --inset N` emits a pre-shrunk boundary — the way to
+                               get a setback out of an app that has no setback setting.
+tools/overshoot.py             THE Phase 0 number: signed waypoint-to-boundary distance +
+                               between-waypoint segment excursion, in metres, vs. a setback.
+                               Replaces eyeballing a ruler on geojson.io.
 tools/geometry_prototype.py    spec §7 pipeline in Shapely: inset -> exclusions ->
                                contained-turn grid -> invariant + route-edge checks.
                                The oracle the eventual Turf.js port is tested against.
@@ -140,16 +148,28 @@ around it. The demo intentionally reproduces this (2 flagged connectors).
 
 ## Immediate next actions
 
-1. Fill the Mini 5 Pro profile: fly, take one photo at known altitude, run
+Python tooling needs a venv: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`.
+
+1. Fix the test site once: draw it on geojson.io, then
+   `tools/boundary.py from-geojson <drawn> --name <site>` and `to-kml` it into every app.
+   **Prefer a concave parcel** — a rectangle hides the connector-cuts-the-corner failure.
+2. **Test the inset shortcut early** (`to-kml --inset 3`). Desk research shows YMapper
+   provably clips waypoints inside the drawn polygon, and WaypointMap/Waypoint OS both
+   advertise straight lines. If handing an app a pre-inset boundary holds up on a real
+   parcel, §5.4 may close with "adopt + SOP" and nothing gets built.
+3. Run Phase 0 trials per `docs/phase0-test-log.md` (T1–T6, free first), same site
+   throughout. **Copy every exported KMZ into `reference/`.**
+4. Per reference file: `tools/kmz_inspect.py schema` (real WPML field names, esp. the
+   turn-mode value actually written) then `tools/overshoot.py <site> <kmz> --setback N`.
+   Its two numbers — waypoint overshoot and segment excursion — are the build/no-build
+   fact. Both are lower bounds: they measure the commanded path, not the flown one.
+5. Fill the Mini 5 Pro profile: fly, take one photo at known altitude, run
    `python3 tools/exif_profile.py <photo> --altitude <m>`, paste into profiles/drones.json.
-2. Run Phase 0 trials per `docs/phase0-test-log.md` (T1–T6, free first), one consistent
-   test site. **Copy every exported KMZ into `reference/`.**
-3. Per reference file: `tools/kmz_inspect.py schema` (learn real WPML field names, esp.
-   turn mode) and `tools/kmz_inspect.py points` (GeoJSON -> geojson.io -> MEASURE the
-   overshoot distance in metres; that number is the build/no-build fact).
-4. Apply the §5.4 decision gate. If build: port geometry_prototype.py to /src/geometry
-   in Turf.js test-first, using the Python version as the oracle; fix the exclusion
-   route-around; then the WPML writer diffed against reference files; UI last.
+6. Apply the §5.4 decision gate. Note two things no product documents at all and no
+   measurement above covers: **exclusion zones** and **batch repeatability** — either can
+   justify building even on a containment pass. If build: port geometry_prototype.py to
+   /src/geometry in Turf.js test-first, using the Python version as the oracle; fix the
+   exclusion route-around; then the WPML writer diffed against reference files; UI last.
 
 ## Risks to keep in view (spec §11)
 

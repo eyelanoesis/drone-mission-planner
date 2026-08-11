@@ -4,3 +4,7 @@ __pycache__/
 .DS_Store
 mission_preview.geojson
 *.waypoints.geojson
+
+# geojson.io scratch / tool output
+*.overshoot.geojson
+sites/*.kml

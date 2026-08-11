@@ -29,7 +29,7 @@ from collections import Counter
 from pathlib import Path
 
 
-def _xml_members(kmz_path):
+def xml_members(kmz_path):
     """Yield (name, bytes) for every XML-ish member of the archive."""
     with zipfile.ZipFile(kmz_path) as z:
         for name in z.namelist():
@@ -37,7 +37,7 @@ def _xml_members(kmz_path):
                 yield name, z.read(name)
 
 
-def _strip_ns(tag):
+def strip_ns(tag):
     return tag.split("}", 1)[-1] if "}" in tag else tag
 
 
@@ -48,7 +48,7 @@ def cmd_list(kmz_path):
 
 
 def cmd_dump(kmz_path):
-    for name, data in _xml_members(kmz_path):
+    for name, data in xml_members(kmz_path):
         print(f"\n{'=' * 70}\n{name}\n{'=' * 70}")
         try:
             print(minidom.parseString(data).toprettyxml(indent="  "))
@@ -60,7 +60,7 @@ def cmd_dump(kmz_path):
 def cmd_schema(kmz_path):
     """Every element and attribute name, with occurrence counts and sample values
     for leaf elements. This is how you learn the real WPML vocabulary."""
-    for name, data in _xml_members(kmz_path):
+    for name, data in xml_members(kmz_path):
         print(f"\n### {name}")
         try:
             root = ET.fromstring(data)
@@ -71,10 +71,10 @@ def cmd_schema(kmz_path):
         samples = {}
         attrs = Counter()
         for el in root.iter():
-            t = _strip_ns(el.tag)
+            t = strip_ns(el.tag)
             tags[t] += 1
             for a in el.attrib:
-                attrs[f"{t}@{_strip_ns(a)}"] += 1
+                attrs[f"{t}@{strip_ns(a)}"] += 1
             text = (el.text or "").strip()
             if text and len(list(el)) == 0 and t not in samples:
                 samples[t] = text[:60]
@@ -93,7 +93,7 @@ _COORD_RE = re.compile(
 )
 
 
-def _extract_points(kmz_path):
+def extract_points(kmz_path):
     """Best-effort waypoint extraction without schema assumptions.
 
     Strategy: any element whose stripped tag contains 'coordinate' (KML
@@ -102,7 +102,7 @@ def _extract_points(kmz_path):
     action are attached as properties for inspection.
     """
     points = []
-    for name, data in _xml_members(kmz_path):
+    for name, data in xml_members(kmz_path):
         try:
             root = ET.fromstring(data)
         except ET.ParseError:
@@ -111,7 +111,7 @@ def _extract_points(kmz_path):
         # Walk Placemark-like containers so per-point siblings can be captured.
         for container in root.iter():
             children = list(container)
-            coord_els = [c for c in children if "coordinate" in _strip_ns(c.tag).lower()]
+            coord_els = [c for c in children if "coordinate" in strip_ns(c.tag).lower()]
             if not coord_els:
                 continue
             # Collect interesting props from this container and up to two
@@ -124,19 +124,19 @@ def _extract_points(kmz_path):
                 # Stop ascending once the scope spans multiple points, else
                 # properties from sibling waypoints would leak across.
                 n_coords = sum(1 for c in node.iter()
-                               if "coordinate" in _strip_ns(c.tag).lower())
+                               if "coordinate" in strip_ns(c.tag).lower())
                 if n_coords > 1:
                     break
                 scopes.append(node)
             props = {}
             for scope in reversed(scopes):  # nearest scope wins
                 for c in scope.iter():
-                    t = _strip_ns(c.tag).lower()
+                    t = strip_ns(c.tag).lower()
                     txt = (c.text or "").strip()
                     if txt and any(k in t for k in
                                    ("height", "altitude", "speed", "turn", "action",
                                     "index", "heading", "gimbal", "trigger")):
-                        props[_strip_ns(c.tag)] = txt[:80]
+                        props[strip_ns(c.tag)] = txt[:80]
             for c in coord_els:
                 for m in _COORD_RE.finditer(c.text or ""):
                     lon, lat = float(m.group(1)), float(m.group(2))
@@ -147,7 +147,7 @@ def _extract_points(kmz_path):
 
 
 def cmd_points(kmz_path):
-    pts = _extract_points(kmz_path)
+    pts = extract_points(kmz_path)
     if not pts:
         print("No coordinate-bearing elements found. Run `schema` and look for "
               "the coordinate vocabulary this file uses.")
@@ -179,20 +179,20 @@ def cmd_points(kmz_path):
 def _flatten(kmz_path):
     """(path, text) lines for structural diffing."""
     lines = []
-    for name, data in _xml_members(kmz_path):
+    for name, data in xml_members(kmz_path):
         try:
             root = ET.fromstring(data)
         except ET.ParseError:
             continue
 
         def walk(el, path):
-            t = _strip_ns(el.tag)
+            t = strip_ns(el.tag)
             p = f"{path}/{t}"
             txt = (el.text or "").strip()
             if txt and len(list(el)) == 0:
                 lines.append(f"{name}:{p} = {txt}")
             for a, v in el.attrib.items():
-                lines.append(f"{name}:{p}@{_strip_ns(a)} = {v}")
+                lines.append(f"{name}:{p}@{strip_ns(a)} = {v}")
             for ch in el:
                 walk(ch, p)
 
