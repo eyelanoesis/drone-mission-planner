@@ -157,18 +157,44 @@ Capture is interval-based; waypoints are path-only, not photo positions.
 
 | Finding | Applies? |
 |---|---|
-| A product enforces boundary containment with a settable parameter → **buy it, build nothing** | |
-| Stop-at-point turn mode reduces overshoot to within the legal setback → **adopt + document as SOP; revisit only if exclusions/batch force it** | |
-| The inset-KML shortcut holds on a real parcel → **adopt app + `boundary.py --inset` as SOP** | |
-| No product contains turnarounds; overshoot is material → **build (Phase 1)** | |
+| A product enforces boundary containment with a settable parameter → **buy it, build nothing** | **no** — none of the six documents or offers one |
+| Stop-at-point turn mode reduces overshoot to within the legal setback → **adopt + document as SOP; revisit only if exclusions/batch force it** | not measured — superseded, see below |
+| The inset-KML shortcut holds on a real parcel → **adopt app + `boundary.py --inset` as SOP** | untested — remains the cheapest fallback if the build stalls |
+| No product covers the required capability set → **build (Phase 1)** | **yes** |
 
-**Decision:** ______________________   **Date:** ______
+**Decision: BUILD (Phase 1).**   **Date: 2026-08-11**
 
-**Measured best-case overshoot across all products: ______ m**  (product: ______)
-**Measured best-case segment excursion: ______ m**  (product: ______)
+### What this decision rests on — read before trusting it
 
-These two numbers are the build/no-build fact. If both are under your smallest
-legal setback, you may not need to build.
+This gate closed on a **capability gap, not on a measured overshoot number.**
+The measured rows above are still blank. That is a weaker basis than §5.4
+intended, and it is recorded as such deliberately.
+
+The gap is categorical rather than marginal. Rune trialled the field and found no
+product that covers the job. The clearest single piece of evidence is DroneRoute
+(the best-liked of those trialled): its grid survey is defined by
+`corner1`/`corner2` — **a two-corner rectangle**. The strings `polygon`,
+`surveyArea`, `boundary`, `inset`, `buffer` and `setback` do not appear anywhere
+in its shared type package. An arbitrary parcel polygon is not a missing feature
+there; it is absent from the data model. Obstacle handling across the field
+(DroneRoute's `getObstacleWarnings`, and every other product) *warns* about a
+crossing rather than routing around it.
+
+So the question the measurement was meant to answer — "is the overshoot small
+enough to live with?" — is moot where the app cannot accept the boundary at all.
+
+**What is still true and still worth doing:**
+
+- The **inset-KML shortcut is untested** and remains the one path that could make
+  the build unnecessary for simple convex parcels. If Phase 1 stalls or a job
+  needs flying before it lands, test it: `boundary.py to-kml --inset 3` into
+  YMapper, then `overshoot.py` against the un-inset site file.
+- `overshoot.py` does not retire with this decision. It becomes the acceptance
+  test for our own output: every generated mission gets measured against the
+  parcel before it is flown.
+- Fill the measured rows opportunistically. A real overshoot figure from an
+  existing app is still the honest benchmark to beat, and it is evidence if the
+  decision is ever revisited (R9).
 
 Remember what the measurement does *not* cover: `overshoot.py` measures the
 **commanded** path. A real aircraft flying curved turns bulges further out than
