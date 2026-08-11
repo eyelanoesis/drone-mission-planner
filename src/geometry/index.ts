@@ -44,15 +44,20 @@ export interface Proj {
 export function makeProj(originLon: number, originLat: number): Proj {
   const M_PER_DEG_LAT = 111_320;
   const mPerDegLon = 111_320 * Math.cos((originLat * Math.PI) / 180);
+  // Longitude is unwrapped relative to the origin. Without this a parcel
+  // straddling the antimeridian projects to a frame ~40,000 km wide and the
+  // grid loop allocates until the process dies.
+  const wrap = (d: number) => (d > 180 ? d - 360 : d < -180 ? d + 360 : d);
   return {
     fwd: (lon, lat) => [
-      (lon - originLon) * mPerDegLon,
+      wrap(lon - originLon) * mPerDegLon,
       (lat - originLat) * M_PER_DEG_LAT,
     ],
-    inv: (x, y) => [
-      originLon + x / mPerDegLon,
-      originLat + y / M_PER_DEG_LAT,
-    ],
+    inv: (x, y) => {
+      const lon = originLon + x / mPerDegLon;
+      return [lon > 180 ? lon - 360 : lon < -180 ? lon + 360 : lon,
+              originLat + y / M_PER_DEG_LAT];
+    },
   };
 }
 
@@ -249,6 +254,14 @@ export function lawnmower(
   _Fm: PolyM,
   { lineSpacing, triggerSpacing, heading }: GridOptions,
 ): WaypointM[] {
+  if (!Number.isFinite(lineSpacing) || !(lineSpacing > 0) ||
+      !Number.isFinite(triggerSpacing) || !(triggerSpacing > 0)) {
+    throw new Error(
+      `lineSpacing and triggerSpacing must be finite positive metres ` +
+      `(got ${lineSpacing}, ${triggerSpacing}); a non-positive value spins the ` +
+      `row loop forever or pushes waypoints until the heap dies.`,
+    );
+  }
   const [bx0, by0, bx1, by1] = bounds(Cm);
   const ox = (bx0 + bx1) / 2, oy = (by0 + by1) / 2;
   const Cr = rotatePoly(Cm, -heading, ox, oy);

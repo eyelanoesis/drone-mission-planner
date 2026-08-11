@@ -336,3 +336,84 @@ describe("property test: 120 random parcels never emit a bad edge", () => {
     console.log(`  ${planned} parcels planned, ${routed} connectors routed, ${breaks} legs broken`);
   });
 });
+
+describe("regressions from the adversarial review", () => {
+  /** 100x100 with a `w`-wide strip of EXCLUDED ground running from y=40 up. */
+  const slotted = (w: number): PolyM => [[[
+    [0, 0], [100, 0], [100, 100],
+    [50 + w / 2, 100], [50 + w / 2, 40], [50 - w / 2, 40], [50 - w / 2, 100],
+    [0, 100], [0, 0],
+  ]]];
+
+  it("no longer emits a sub-decimetre hop across excluded ground unverified", () => {
+    // Previously routeConnector short-circuited on length < MIN_HOP (0.1 m) and
+    // returned ok:true BEFORE the clearance gate. The excursion it produced was
+    // bounded by |st|/2 = 0.05 m — smaller than assertPlan's own 0.05 m
+    // tolerance, so neither gate could ever catch it.
+    const F = slotted(0.08);
+    const g = buildNavGraph(F);
+    const s: Pt = [49.94, 59.96];
+    const t: Pt = [50.06, 59.96];   // 0.12 m apart, straight across the slot
+    const short: Pt = [49.97, 59.96];
+    const shortT: Pt = [50.03, 59.96]; // 0.06 m apart — the old bypass window
+
+    for (const [a, b] of [[s, t], [short, shortT]] as const) {
+      const r = routeConnector(g, a, b);
+      if (r.ok) {
+        // if it claims success the path must actually verify, at tolerance 0
+        const pts = [a, ...r.via, b];
+        for (let i = 0; i + 1 < pts.length; i++) {
+          expect(clearSegment(F, ringEdges(F), pts[i]!, pts[i + 1]!, g.eps)).toBe(true);
+        }
+      } else {
+        expect(["unreachable", "passage-too-narrow"]).toContain(r.reason);
+      }
+    }
+  });
+
+  it.each([
+    ["lineSpacing", { lineSpacing: 0, triggerSpacing: 8 }],
+    ["lineSpacing", { lineSpacing: -12, triggerSpacing: 8 }],
+    ["lineSpacing", { lineSpacing: NaN, triggerSpacing: 8 }],
+    ["triggerSpacing", { lineSpacing: 12, triggerSpacing: 0 }],
+    ["triggerSpacing", { lineSpacing: 12, triggerSpacing: -1 }],
+    ["triggerSpacing", { lineSpacing: 12, triggerSpacing: Infinity }],
+  ])("rejects a non-positive %s instead of hanging or exhausting the heap", (_n, sp) => {
+    // lineSpacing <= 0 spun the row loop forever; triggerSpacing <= 0 made
+    // nTrig Infinity. In a browser both simply stop the tab.
+    const { Fm, Cm } = regions(MAST);
+    const grid = { ...sp, heading: 0 };
+    expect(() => lawnmowerRouted(Cm, Fm, grid)).toThrow(/finite positive/);
+    expect(() => lawnmower(Cm, Fm, grid)).toThrow(/finite positive/);
+  });
+
+  it("refuses capture ends that clear less than routeClearance, with the measured value", () => {
+    // turnExtension 0.2 < routeClearance 0.5: every connector would be refused
+    // and a whole convex parcel reported as 'genuinely split'.
+    const { Fm, Cm } = regions([], 0.2);
+    expect(() => lawnmowerRouted(Cm, Fm, GRID))
+      .toThrow(/capture-line ends clear only 0\.\d+ m .* below routeClearance 0\.5 m/);
+  });
+
+  it("reports break coordinates in the caller's frame, not the sweep frame", () => {
+    const wall = turf.lineString([[12.3400, 55.96945], [12.3430, 55.96945]]);
+    const { Fm, Cm } = regions([{ geometry: wall as never, clearance: 14 }]);
+    const plan = lawnmowerRouted(Cm, Fm, { ...GRID, heading: 90 });
+    expect(plan.report.breaks.length).toBeGreaterThan(0);
+    const b = plan.report.breaks[0]!;
+    // the break is between two real waypoints — its `from` must coincide with
+    // the capture-end that precedes it, in the coordinates the caller sees
+    const ends = plan.legs.flat().filter((w) => w.kind === "capture-end");
+    const nearest = Math.min(...ends.map((w) => Math.hypot(w.x - b.from[0], w.y - b.from[1])));
+    expect(nearest).toBeLessThan(1e-6);
+  });
+
+  it("survives a parcel straddling the antimeridian", () => {
+    // makeProj now unwraps longitude; without it the frame was ~40,000 km wide
+    // and the row loop allocated until the process died.
+    const p = makeProj(179.999, 55.97);
+    const [x] = p.fwd(-179.999, 55.97);
+    expect(Math.abs(x)).toBeLessThan(200);          // ~125 m, not half the planet
+    expect(p.inv(...p.fwd(-179.999, 55.97))[0]).toBeCloseTo(-179.999, 6);
+  });
+});

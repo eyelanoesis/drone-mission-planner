@@ -25,6 +25,21 @@
  * Nothing here is trusted on its own. Whatever this module produces must still
  * pass assertInvariant and checkRouteEdges — two independently written
  * predicates — before anything is exported.
+ *
+ * KNOWN LIMIT — graph construction is O(nodes^2 * edges), and node count grows
+ * linearly with exclusion count. Measured, after the bounding-box reject in
+ * clearPoint/clearSegment:
+ *
+ *      1 exclusion    32 nodes      7 ms
+ *      5 exclusions  160 nodes     20 ms
+ *     12 exclusions  385 nodes    167 ms
+ *     24 exclusions  685 nodes    970 ms
+ *
+ * Fine interactively up to roughly a dozen exclusions, uncomfortable beyond
+ * that. The fix when it bites is a spatial index over ringEdges (uniform grid
+ * or R-tree) so the clearance predicates visit only nearby edges instead of all
+ * of them — a constant-factor problem, not a correctness one. Do not weaken any
+ * predicate to make it faster.
  */
 import {
   assertInvariant,
@@ -50,7 +65,6 @@ export const K_OFFSET = 2;
 const MITRE_LIMIT = 4;
 const NODE_MERGE = 0.01;
 const DEGEN_EDGE = 1e-9;
-const MIN_HOP = 0.1;
 const MAX_VIA = 8;
 const MAX_DETOUR = 4;
 
@@ -122,8 +136,27 @@ export function segmentClearance(edges: EdgeList, p: Pt, q: Pt): number {
   return Math.sqrt(best);
 }
 
+/**
+ * Conservative reject: true only when the edge provably cannot come within
+ * `eps` of the query box. Four comparisons in place of a full segment-segment
+ * distance, and it can never change a verdict — only skip work.
+ */
+function farBox(a: Pt, b: Pt, x0: number, y0: number, x1: number, y1: number,
+                eps: number): boolean {
+  return (
+    Math.max(a[0], b[0]) < x0 - eps || Math.min(a[0], b[0]) > x1 + eps ||
+    Math.max(a[1], b[1]) < y0 - eps || Math.min(a[1], b[1]) > y1 + eps
+  );
+}
+
 export function clearPoint(poly: PolyM, edges: EdgeList, p: Pt, eps: number): boolean {
-  if (pointClearance(edges, p) < eps) return false;
+  // Early-out: the predicate needs a boolean, not the minimum. Scanning every
+  // edge to completion is what makes buildNavGraph O(V^2 * E).
+  const eps2 = eps * eps;
+  for (const [a, b] of edges) {
+    if (farBox(a, b, p[0], p[1], p[0], p[1], eps)) continue;
+    if (pointSegDist2(p, a, b) < eps2) return false;
+  }
   return containsPoint(poly, p[0], p[1]);
 }
 
@@ -138,7 +171,13 @@ export function clearSegment(
   poly: PolyM, edges: EdgeList, p: Pt, q: Pt, eps: number,
 ): boolean {
   if (p[0] === q[0] && p[1] === q[1]) return clearPoint(poly, edges, p, eps);
-  if (segmentClearance(edges, p, q) < eps) return false;
+  const eps2 = eps * eps;
+  const x0 = Math.min(p[0], q[0]), x1 = Math.max(p[0], q[0]);
+  const y0 = Math.min(p[1], q[1]), y1 = Math.max(p[1], q[1]);
+  for (const [a, b] of edges) {
+    if (farBox(a, b, x0, y0, x1, y1, eps)) continue;
+    if (segSegDist2(p, q, a, b) < eps2) return false;
+  }
   return containsPoint(poly, (p[0] + q[0]) / 2, (p[1] + q[1]) / 2);
 }
 
@@ -320,9 +359,14 @@ export function routeConnector(
 ): ConnectorResult {
   const straight = Math.hypot(t[0] - s[0], t[1] - s[1]);
   const none = { via: [] as Pt[], direct: true, length: straight, flags: [] as never[] };
-  if (straight < MIN_HOP) {
-    return { ok: true, ...none, minClearance: pointClearance(g.edges, s) };
-  }
+  // NO length-based short circuit. A previous version returned ok:true for any
+  // hop under 0.1 m without checking it, on the reasoning that such a hop is
+  // below the aircraft's own position accuracy. It is not: a sub-decimetre hop
+  // across a sliver of excluded ground is still a segment outside F, and it
+  // shipped unverified because assertPlan's 0.05 m tolerance is larger than the
+  // deepest such excursion can be (|st|/2), so neither gate could ever catch it.
+  // Every connector goes through the same gate, whatever its length.
+  // clearSegment handles the degenerate p === q case by delegating to clearPoint.
   if (clearSegment(g.poly, g.edges, s, t, g.eps)) {
     return { ok: true, ...none, minClearance: segmentClearance(g.edges, s, t) };
   }
@@ -399,6 +443,27 @@ function probeNarrow(g: NavGraph, s: Pt, t: Pt): boolean {
 
 // ────────────────────────────────────────────────────────── assembly
 
+
+/**
+ * lineSpacing <= 0 spins the row loop forever; triggerSpacing <= 0 makes nTrig
+ * Infinity and pushes waypoints until the heap dies. Both are silent in a
+ * browser — the tab simply stops. Negated-positive form catches 0, negatives,
+ * NaN and Infinity in one test.
+ */
+export function assertGrid({ lineSpacing, triggerSpacing }: GridOptions): void {
+  for (const [name, v] of [
+    ["lineSpacing", lineSpacing], ["triggerSpacing", triggerSpacing],
+  ] as const) {
+    if (!Number.isFinite(v) || !(v > 0)) {
+      throw new Error(
+        `${name} must be a finite positive number of metres (got ${v}). ` +
+        `Spacings come from the drone profile and overlap settings; a zero or ` +
+        `negative value means those were not computed.`,
+      );
+    }
+  }
+}
+
 export interface RouteReport {
   legs: number;
   viaWaypoints: number;
@@ -443,6 +508,8 @@ export function lawnmowerRouted(
   const { lineSpacing, triggerSpacing, heading } = grid;
   const eps = opts.routeClearance ?? EPS_ROUTE;
 
+  assertGrid(grid);
+
   if (opts.turnExtension !== undefined && opts.turnExtension < eps) {
     throw new Error(
       `turnExtension ${opts.turnExtension} m is below routeClearance ${eps} m: ` +
@@ -468,6 +535,24 @@ export function lawnmowerRouted(
     }
   }
   if (!segs.length) throw new Error("no flight lines fit; check spacing vs. area size");
+
+  // Capture-line ends are where every connector starts and finishes, so if THEY
+  // sit closer to the boundary than the router's own clearance, no link can be
+  // built from them and every connector reports the parcel "genuinely split" —
+  // a whole convex site collapsing into legs with an untrue explanation.
+  // Measured from the geometry, not from opts.turnExtension: that is a
+  // caller-supplied echo which a caller can simply omit.
+  const endClear = Math.min(...segs.flatMap((s2) =>
+    [g.edges, g.edges].map((_, k) =>
+      pointClearance(g.edges, [k === 0 ? s2.a : s2.b, s2.y]))));
+  if (endClear < eps) {
+    throw new Error(
+      `capture-line ends clear only ${endClear.toFixed(3)} m of the flyable ` +
+      `boundary, below routeClearance ${eps} m — every connector would be ` +
+      `refused and the parcel reported as split. Rebuild the capture region ` +
+      `with turnExtension >= ${eps} m, or lower routeClearance knowingly.`,
+    );
+  }
 
   const report: RouteReport = {
     legs: 0, viaWaypoints: 0, routedConnectors: 0, directConnectors: 0,
@@ -502,8 +587,13 @@ export function lawnmowerRouted(
             }
             for (const f of r.flags) if (!report.flags.includes(f)) report.flags.push(f);
           } else {
-            report.breaks.push({ afterLeg: legs.length - 1, from: prevEnd,
-                                 to: [start, y], reason: r.reason, hint: r.hint });
+            // rotated back here: everything else the caller receives is in
+            // their frame, and a break location is acted on by a human
+            report.breaks.push({
+              afterLeg: legs.length - 1,
+              from: rotate(prevEnd[0], prevEnd[1], heading, ox, oy),
+              to: rotate(start, y, heading, ox, oy),
+              reason: r.reason, hint: r.hint });
             cur = [];
             legs.push(cur);
           }
@@ -548,7 +638,10 @@ export function lawnmowerRouted(
 export function assertPlan(plan: MissionPlan, Fm: PolyM, tol = 0.05): true {
   plan.legs.forEach((leg, k) => {
     assertInvariant(leg, Fm, tol);
-    const bad = checkRouteEdges(leg, Fm, tol);
+    // Route edges are checked at tolerance ZERO, not at `tol`. Routed waypoints
+    // clear a metre, so the slack is not needed — and a gate whose tolerance
+    // exceeds the deepest excursion a defect can produce cannot catch it.
+    const bad = checkRouteEdges(leg, Fm, 0);
     if (bad.length) {
       throw new RouteInvariantViolation(
         `ROUTE INVARIANT VIOLATED: leg ${k} has ${bad.length} segment(s) ` +
