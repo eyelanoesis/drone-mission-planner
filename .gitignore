@@ -11,3 +11,7 @@ sites/*.kml
 
 # node deps (Phase 1 Turf.js port)
 node_modules/
+
+# node
+node_modules/
+dist/

@@ -19,14 +19,22 @@ for facility-management clients, up to several hundred missions/year. Danish set
 
 ## Current status
 
-- Specification v0.2 complete (see spec file). **No code exists yet.**
-- **Phase 0 (evaluation of existing tools) is not done and gates everything.**
-  Do not start building until Phase 0 says build. Trials: WaypointMap, Waypoint OS,
-  Litchi Hub, MavenRoute+MavenBridge, YMapper (all free/owned), then Pixpro (paid trial).
-  Checklist in spec §5.3. Decision gate in §5.4.
-- Key open hypothesis (spec §7.4): setting waypoint **turn mode to stop-at-point**
-  (vs. curved/coordinated) may collapse line-end overshoot to near zero on a multirotor.
-  If any existing app exposes this and it works, the build may be unnecessary. Test first.
+- Specification v0.2 complete (see spec file).
+- **Phase 0 closed 2026-08-11: BUILD.** No trialled product covers the capability set;
+  the best of them (DroneRoute) defines a survey as a two-corner rectangle and has no
+  polygon in its data model at all. Decided on that capability gap, **not** on a measured
+  overshoot number — the measured rows in `docs/phase0-test-log.md` are still blank, and
+  the reasoning + what would reopen it is recorded at the bottom of that file.
+- **Phase 1 in progress.** `/src/geometry` is ported from the Python oracle and green:
+  areas within 0.022 % of Shapely, waypoint/trigger/bad-edge counts identical, mutation-
+  checked. Next: route connectors around exclusions, then `/src/wpml`, then UI.
+- Still untested and still the cheapest escape hatch: the **inset-KML shortcut**
+  (`tools/boundary.py to-kml --inset N` into an app that clips to the drawn polygon).
+  If Phase 1 stalls or a job needs flying first, try it.
+- Key open hypothesis (spec §7.4): waypoint **turn mode stop-at-point** collapses line-end
+  overshoot on a multirotor. Both reference files write a stop-at-point mode, which is
+  supporting evidence — not the measurement. The measurement is `tools/overshoot.py`
+  against a flown mission.
 
 ## Architecture decisions (settled — don't relitigate without cause)
 
