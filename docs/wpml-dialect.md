@@ -28,10 +28,17 @@ documentation. **[src]** (droneroute PR #56, by Myrko Federico)
 A writer that emits the enterprise dialect for a Mini will produce a file DJI Fly
 refuses. This is the likeliest single cause of "my KMZ won't import."
 
-> **Caveat [obs]:** the one real consumer-dialect file in `reference/`
-> (Waypoint OS) uses the **`www.dji.com`** namespace, not `www.uav.com`, and is
-> reported to work. So the namespace may be tolerated either way, or one of the
-> two sources is wrong. **Unresolved — see §4.**
+>**RESOLVED 2026-08-12 — the namespace is `www.uav.com`. [obs]**
+> Two files written by DJI Fly itself (`wpml:author` = `fly`) are now in
+> `reference/`: `djifly-mcobosb-2025-08-24.kmz` and
+> `djifly-ptarmigan-2026-03-06.kmz`. Both use `http://www.uav.com/wpmz/1.0.2`,
+> both omit `payloadInfo`, both carry `droneEnumValue` 68 / sub 0. Independently
+> corroborated by FlyPath's `wpml/consumer.py`, whose header states it was
+> "verified against a DJI Mini 4 Pro + DJI RC2 native mission dump".
+>
+> The Waypoint OS export is therefore the **outlier**, not the rule, on this
+> field. It may still import — DJI may tolerate both — but a writer that copies
+> DJI's own output is taking the safer side of an unknown.
 
 ## 2. Mini 5 Pro identity
 
@@ -99,6 +106,14 @@ The two sources express gimbal completely differently:
 |---|---|
 | Waypoint OS **[obs]** | per-Placemark `gimbalHeadingYawBase=aircraft` + `gimbalRotateMode=absoluteAngle` — **and no pitch angle anywhere in the file** |
 | droneroute PR #56 **[src]** | per-Placemark `waypointGimbalHeadingParam/waypointGimbalPitchAngle` |
+| **DJI Fly ×2 [obs]** | **`<wpml:gimbalPitchRotateAngle>` per waypoint** (0 and −18.5 in the two files) with `gimbalRotateMode=absoluteAngle`, plus `gimbalRotate` / `gimbalEvenlyRotate` actions in the action group |
+
+**RESOLVED 2026-08-12 for the mechanism.** DJI Fly writes
+`gimbalPitchRotateAngle` on the waypoint. Waypoint OS's silence is the outlier
+again — meaning that mission flew at whatever pitch the gimbal happened to hold,
+which for orthomosaic work is a silent failure. Emit an explicit −90 and never
+rely on a default. Still **[unver]** on this airframe: that −90 actually produces
+nadir frames on a Mini 5 Pro.
 
 **This matters more to us than to either of them.** Orthomosaic capture requires
 nadir (−90°). The one file we have that is known to load carries no pitch value at
@@ -122,15 +137,25 @@ battery-aware mission splitting a real requirement rather than a nicety.
 
 Each of these differs between the two reference files. Ranked by what breaks.
 
-| # | Field | Waypoint OS | droneroute #56 | If wrong |
-|---|---|---|---|---|
-| 1 | `xmlns:wpml` | `www.dji.com` | `www.uav.com` | Mission won't import at all |
-| 2 | gimbal pitch | absent | `waypointGimbalHeadingParam` | Flies fine, images useless for ortho |
-| 3 | `takeOffSecurityHeight` | `1.2` | omitted | Possibly rejected, or unsafe first climb |
-| 4 | `useStraightLine` | `1` | `0` | **Curved path between waypoints → boundary excursion** |
-| 5 | turn mode enum | `...Discontinuity...` | `...Continuity...` | Overshoot at line ends |
+| # | Field | Waypoint OS | droneroute #56 | DJI Fly ×2 | Status |
+|---|---|---|---|---|---|
+| 1 | `xmlns:wpml` | `www.dji.com` | `www.uav.com` | **`www.uav.com`** | **SETTLED** — use `uav.com` |
+| 2 | gimbal pitch | absent | `waypointGimbalHeadingParam` | **`gimbalPitchRotateAngle`** | **SETTLED** (mechanism) |
+| 3 | `takeOffSecurityHeight` | `1.2` | omitted | **absent** | **SETTLED** — optional |
+| 4 | `useStraightLine` | `1` | `0` | `0`, `0` | **OPEN** — user setting, not format |
+| 5 | turn mode enum | `...Discontinuity...` | `...Continuity...` | `...StopWithContinuity...`, `...PassWithContinuity...` | **OPEN** — user setting |
 
-#4 and #5 are the containment-critical pair. #1 is the import-critical one.
+#4 and #5 are the containment-critical pair and they remain **open**. The two DJI
+Fly files do not settle them and cannot: those fields record what a pilot chose
+in the app, not what the format requires. Both of those pilots wanted smooth
+cinematic paths, so both files carry `useStraightLine=0` with a curved turn mode.
+
+Note what that pairing means for us: `useStraightLine=0` plus
+`toPointAndPassWithContinuityCurvature` is a flown path that **bulges outside the
+straight line between waypoints** — cutting inside our routed corners, exactly
+where clearance is tightest. The geometry module guarantees the commanded path;
+only these two fields make the flown path match it. Getting them wrong voids the
+whole containment guarantee silently.
 
 **How to settle them cheaply:** make a waypoint mission in DJI Fly on the RC 2
 itself, then pull it off the controller and read it. A DJI-authored file for this
